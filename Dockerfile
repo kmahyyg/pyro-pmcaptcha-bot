@@ -1,4 +1,4 @@
-FROM python:3.9-bullseye
+FROM python:3.9-slim-bullseye
 
 WORKDIR /app
 COPY pyropmCaptcha.py /app
