@@ -1,0 +1,17 @@
+.idea/
+.vscode/
+pyroSecrets.py
+config.json
+secret*.json
+config.py
+*.pyc
+__pycache__/
+venv/
+.venv/
+node_modules/
+secret.js
+*.session
+pyroSecrets.py
+.DS_Store
+*.session-journal
+wrangler.toml

@@ -1,0 +1,10 @@
+name = "custom-app-name-here"
+main = "src/index.js"
+compatibility_date = "2022-06-17"
+
+[vars]
+hcapt_sitekey = ""
+hcapt_sitesecret = ""
+urlPrefix = ""
+envVar_jwkKey = ""
+envVar_jwkUUID = ""
