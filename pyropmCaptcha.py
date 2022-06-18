@@ -121,7 +121,7 @@ async def captcha_pm(client: Client, message: types.Message):
         # block user and return
         else:
             # check if value expired
-            if int(pmstat) < int(time.time()):
+            if int(pmstat.decode()) < int(time.time()):
                 await message.reply(VERIF_FAIL.format(errcode=9002))
                 print("Captcha expired, block user " + str(msg_chat_id))
                 await client.block_user(msg_chat_id)
@@ -149,8 +149,13 @@ async def captcha_pm(client: Client, message: types.Message):
                 userid = str(msg_chat_id)
                 # retrieve ts from uinverify_
                 # ts = [1], sessionUUID = [0]
-                tsAndUUID = uinverify.split(",")
-                oriSignTxt = tsAndUUID[0] + "/" + userid + tsAndUUID[1]
+                tsAndUUID = uinverify.decode().split(",")
+                try:
+                    oriSignTxt = tsAndUUID[0] + "/" + userid + "/" + tsAndUUID[1]
+                except KeyError:
+                    await message.reply(VERIF_500.format(errcode=9098))
+                    print("[ERROR] KeyError in uinverify_" + str(msg_chat_id))
+                    return
                 # generate sig
                 secretKeyB64 = pyroSecrets.HMAC_KEY_B64_URLSAFE_NOPAD
                 while len(secretKeyB64) % 4 != 0:
@@ -172,6 +177,7 @@ async def captcha_pm(client: Client, message: types.Message):
                         await message.reply(VERIF_500.format(errcode=9099))
                         return
                     else:
+                        print("Verification Passed for: " + str(msg_chat_id))
                         await message.reply(VERIF_PASS)
                         return
                 else:

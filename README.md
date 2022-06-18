@@ -19,3 +19,4 @@ ErrCode:
 - 9004: Verification Expired within 95s
 - 9003: Signature Verification Failed
 - 9099: Database error
+- 9098: Python Execution Error
