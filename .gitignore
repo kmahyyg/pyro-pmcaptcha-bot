@@ -13,3 +13,5 @@ secret.js
 *.session
 pyroSecrets.py
 .DS_Store
+*.session-journal
+wrangler.toml
