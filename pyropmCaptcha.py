@@ -105,7 +105,7 @@ async def captcha_pm(client: Client, message: types.Message):
             veriurl = pyroSecrets.WEB_HostName + "/show" + pyroSecrets.WEB_UrlPrefix + "/" \
                       + sessionUUID + "/" + str(msg_chat_id) + "/" + str(curTs)
             await message.reply(VERIF_TMPL.format(veriurl=veriurl, tsstr=time.strftime("%Y-%m-%d %H:%M:%S",
-                                                                                       time.localtime(curTs))))
+                                                                                       time.localtime(int(time.time())))))
             print("Captcha sent to " + str(msg_chat_id))
             # set pmstat_ and uinverify_ in redis
             ret = redis_cli.set("pmstat_" + str(msg_chat_id), curTs, ex=600)
