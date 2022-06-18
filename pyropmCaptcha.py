@@ -33,14 +33,14 @@ Powered By MYounGram v1.0
 
 VERIF_FAIL = """
 人机验证失败，验证不通过，请联系 @S1gnaiBot 解封。
-Human Verification Failed, Contact @S1gnaiBot to unblock.
+Human Verification Failed, Contact @S1gnaiBot to unblock. ERRCODE: {errcode}
 
 Powered By MYounGram v1.0
 """
 
 VERIF_PASS = """
 人机验证通过，感谢您的使用。
-Human Verification Pass! Congrats! ERRCODE: {errcode}
+Human Verification Pass! Congrats! 
 
 Powered By MYounGram v1.0
 """
