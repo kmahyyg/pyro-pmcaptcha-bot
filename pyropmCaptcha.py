@@ -61,27 +61,32 @@ redis_cli = redis.Redis(host=pyroSecrets.DB_REDIS_IP, port=pyroSecrets.DB_REDIS_
 async def captcha_pm(client: Client, message: types.Message):
     # if msg is a bot, ignore
     if message.from_user.is_bot:
+        print("Bot Message bypassed.")
         return
 
     # if msg is from self or contact, ignore
     from_user = message.from_user
     if from_user.is_contact or from_user.is_self:
+        print("Contact or Self Message bypassed.")
         return
 
     # others, means strangers
     msg_chat_id = message.chat.id
+    print("Chat from Stranger: " + str(msg_chat_id))
     # if already whitelisted, ignore
-    uStatus = await redis_cli.get("ulist_" + str(msg_chat_id))
+    uStatus = redis_cli.get("ulist_" + str(msg_chat_id))
     if uStatus == 1:
         return
 
     # If message is outgoing, means already known, add to k-v for bypass
     if message.outgoing:
         if redis_cli.set("ulist_" + str(msg_chat_id), 1):
+            print("User " + str(msg_chat_id) + " added to whitelist due to outgoing first.")
             return
 
     # If already blocked, return
     if redis_cli.get("ulist_" + str(msg_chat_id)) == 2:
+        print("User " + str(msg_chat_id) + " is already blocked.")
         await message.reply(VERIF_FAIL.format(errcode=9001))
         await client.block_user(msg_chat_id)
         return
@@ -91,7 +96,7 @@ async def captcha_pm(client: Client, message: types.Message):
     #     if incorrect, block directly
     if not message.outgoing:
         # check pmstat_ in redis
-        pmstat = await redis_cli.get("pmstat_" + str(msg_chat_id))
+        pmstat = redis_cli.get("pmstat_" + str(msg_chat_id))
         # pmstat_ not found, means new pm, send captcha
         if pmstat is None:
             # send captcha
@@ -101,6 +106,7 @@ async def captcha_pm(client: Client, message: types.Message):
                       + sessionUUID + "/" + str(msg_chat_id) + "/" + str(curTs)
             await message.reply(VERIF_TMPL.format(veriurl=veriurl, tsstr=time.strftime("%Y-%m-%d %H:%M:%S",
                                                                                        time.localtime(curTs))))
+            print("Captcha sent to " + str(msg_chat_id))
             # set pmstat_ and uinverify_ in redis
             ret = redis_cli.set("pmstat_" + str(msg_chat_id), curTs, ex=600)
             if ret is None:
@@ -117,6 +123,7 @@ async def captcha_pm(client: Client, message: types.Message):
             # check if value expired
             if int(pmstat) < int(time.time()):
                 await message.reply(VERIF_FAIL.format(errcode=9002))
+                print("Captcha expired, block user " + str(msg_chat_id))
                 await client.block_user(msg_chat_id)
                 # set ulist_ in redis
                 ret = redis_cli.set("ulist_" + str(msg_chat_id), 2)
@@ -124,11 +131,12 @@ async def captcha_pm(client: Client, message: types.Message):
                     print("[ERROR] ulist_" + str(msg_chat_id) + " set stat failed")
                 return
             # check uinverify_ in redis
-            uinverify = await redis_cli.get("uinverify_" + str(msg_chat_id))
+            uinverify = redis_cli.get("uinverify_" + str(msg_chat_id))
             if uinverify is None:
                 # uinverify_ not found, already expired, block user and return
                 await message.reply(VERIF_FAIL.format(errcode=9004))
                 await client.block_user(msg_chat_id)
+                print("Captcha expired, block user " + str(msg_chat_id))
                 ret = redis_cli.set("ulist_" + str(msg_chat_id), 2)
                 if ret is None:
                     print("[ERROR] ulist_" + str(msg_chat_id) + " set block failed")
@@ -153,8 +161,10 @@ async def captcha_pm(client: Client, message: types.Message):
                                     oriSignTxt.encode(),
                                     hashlib.sha256)
                 sigB64 = base64.b64encode(sigBytes.digest()).decode("utf-8")
+                print("Debug Sig: " + sigB64)
                 # compare sig
                 if sigB64 == textSig:
+                    print("Captcha correct, add to whitelist " + str(msg_chat_id))
                     # sig correct, add to k-v for bypass
                     ret = redis_cli.set("ulist_" + str(msg_chat_id), 1)
                     if ret is None:
@@ -166,6 +176,7 @@ async def captcha_pm(client: Client, message: types.Message):
                         return
                 else:
                     # sig incorrect, block user and return
+                    print("Captcha SIG incorrect, block user " + str(msg_chat_id))
                     await message.reply(VERIF_FAIL.format(errcode=9003))
                     await client.block_user(msg_chat_id)
                     ret = redis_cli.set("ulist_" + str(msg_chat_id), 2)
@@ -174,22 +185,16 @@ async def captcha_pm(client: Client, message: types.Message):
                     return
 
 
-async def main():
+def main():
     # Connect to redis
     try:
         redis_cli.ping()
+        print("Redis Connected.")
     except:
         print("Redis connection failed")
         sys.exit(1)
 
-    # Start Working
-    async with app:
-        await app.start()
-        while True:
-            try:
-                await asyncio.sleep(1)
-            except KeyboardInterrupt:
-                await app.stop()
 
-
-asyncio.run(main())
+print("PyroPM Captcha Bot is starting...")
+main()
+app.run()
