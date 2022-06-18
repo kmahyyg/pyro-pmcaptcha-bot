@@ -1,0 +1,5 @@
+tgcrypto
+pyrogram
+uvloop
+ecdsa[gmpy2]
+redis
