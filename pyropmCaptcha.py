@@ -40,14 +40,14 @@ Powered By MYounGram v1.0
 
 VERIF_PASS = """
 人机验证通过，感谢您的使用。
-Human Verification Pass! Congrats!
+Human Verification Pass! Congrats! ERRCODE: {errcode}
 
 Powered By MYounGram v1.0
 """
 
 VERIF_500 = """
 内部异常，验证结果待定，请联系 @S1gnaiBot 报障。
-We've encountered internal error, please contact @S1gnaiBot to report issue.
+We've encountered internal error, please contact @S1gnaiBot to report issue. ERRCODE: {errcode}
 
 Powered By MYounGram v1.0
 """
@@ -82,6 +82,7 @@ async def captcha_pm(client: Client, message: types.Message):
 
     # If already blocked, return
     if redis_cli.get("ulist_" + str(msg_chat_id)) == 2:
+        await message.reply(VERIF_FAIL.format(errcode=9001))
         await client.block_user(msg_chat_id)
         return
 
@@ -115,7 +116,7 @@ async def captcha_pm(client: Client, message: types.Message):
         else:
             # check if value expired
             if int(pmstat) < int(time.time()):
-                await message.reply(VERIF_FAIL)
+                await message.reply(VERIF_FAIL.format(errcode=9002))
                 await client.block_user(msg_chat_id)
                 # set ulist_ in redis
                 ret = redis_cli.set("ulist_" + str(msg_chat_id), 2)
@@ -126,7 +127,7 @@ async def captcha_pm(client: Client, message: types.Message):
             uinverify = await redis_cli.get("uinverify_" + str(msg_chat_id))
             if uinverify is None:
                 # uinverify_ not found, already expired, block user and return
-                await message.reply(VERIF_FAIL)
+                await message.reply(VERIF_FAIL.format(errcode=9004))
                 await client.block_user(msg_chat_id)
                 ret = redis_cli.set("ulist_" + str(msg_chat_id), 2)
                 if ret is None:
@@ -158,14 +159,14 @@ async def captcha_pm(client: Client, message: types.Message):
                     ret = redis_cli.set("ulist_" + str(msg_chat_id), 1)
                     if ret is None:
                         print("[ERROR] ulist_" + str(msg_chat_id) + " set ok")
-                        await message.reply(VERIF_500)
+                        await message.reply(VERIF_500.format(errcode=9099))
                         return
                     else:
                         await message.reply(VERIF_PASS)
                         return
                 else:
                     # sig incorrect, block user and return
-                    await message.reply(VERIF_FAIL)
+                    await message.reply(VERIF_FAIL.format(errcode=9003))
                     await client.block_user(msg_chat_id)
                     ret = redis_cli.set("ulist_" + str(msg_chat_id), 2)
                     if ret is None:
