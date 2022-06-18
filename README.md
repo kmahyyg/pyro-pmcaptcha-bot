@@ -20,3 +20,11 @@ ErrCode:
 - 9003: Signature Verification Failed
 - 9099: Database error
 - 9098: Python Execution Error
+
+## Docker-compose
+
+Use `bind` mount to mount file with long syntax in `volumes` key.
+
+Use `attach` subcommand to input authentication data of Telegram.
+
+Use `echo "" > $(docker inspect --format='{{.LogPath}}' <CONTAINER_NAME_OR_ID>)`  to clean logs which logged all your input to prevent sensitive information leakage.
