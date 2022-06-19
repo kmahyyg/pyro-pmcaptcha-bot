@@ -28,3 +28,5 @@ Use `bind` mount to mount file with long syntax in `volumes` key.
 Use `attach` subcommand to input authentication data of Telegram.
 
 Use `echo "" > $(docker inspect --format='{{.LogPath}}' <CONTAINER_NAME_OR_ID>)`  to clean logs which logged all your input to prevent sensitive information leakage.
+
+Use `^P + ^Q` to detach from container.

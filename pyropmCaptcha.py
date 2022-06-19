@@ -66,7 +66,7 @@ async def captcha_pm(client: Client, message: types.Message):
 
     # if msg is from self or contact, ignore
     from_user = message.from_user
-    if from_user.is_contact:
+    if from_user.is_contact and not from_user.is_self:
         print("Contact Message bypassed.")
         return
 
