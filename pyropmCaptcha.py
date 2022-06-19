@@ -61,21 +61,18 @@ redis_cli = redis.Redis(host=pyroSecrets.DB_REDIS_IP, port=pyroSecrets.DB_REDIS_
 async def captcha_pm(client: Client, message: types.Message):
     # if msg is a bot, ignore
     if message.from_user.is_bot:
-        print("Bot Message bypassed.")
         return
 
     # if msg is from self or contact, ignore
     from_user = message.from_user
     if from_user.is_contact and not from_user.is_self:
-        print("Contact Message bypassed.")
         return
 
     # others, means strangers
-    msg_chat_id = message.chat.id
-    print("Chat from Stranger: " + str(msg_chat_id))
+    msg_chat_id = message.chat.id    
     # if already whitelisted, ignore
     uStatus = redis_cli.get("ulist_" + str(msg_chat_id))
-    if uStatus == 1:
+    if uStatus == b"1":
         return
 
     # If message is outgoing, means already known, add to k-v for bypass
@@ -87,11 +84,10 @@ async def captcha_pm(client: Client, message: types.Message):
 
     # bypass self message
     if message.from_user.is_self:
-        print("Self Message bypassed.")
         return
 
     # If already blocked, return
-    if redis_cli.get("ulist_" + str(msg_chat_id)) == 2:
+    if redis_cli.get("ulist_" + str(msg_chat_id)) == b"2":
         print("User " + str(msg_chat_id) + " is already blocked.")
         await message.reply(VERIF_FAIL.format(errcode=9001))
         await client.block_user(msg_chat_id)
