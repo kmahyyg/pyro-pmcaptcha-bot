@@ -23,7 +23,10 @@ ErrCode:
 
 ## Docker-compose
 
-Use `bind` mount to mount file with long syntax in `volumes` key.
+Use `bind` mount to mount following file with long syntax in `volumes` key:
+
+- `/app/pmcaptcha_myoungram.session`
+- `/app/pmroSecrets.py`
 
 Use `attach` subcommand to input authentication data of Telegram.
 
