@@ -82,8 +82,8 @@ async def captcha_pm(client: Client, message: types.Message):
             print("User " + str(msg_chat_id) + " added to whitelist due to outgoing first.")
             return
 
-    # bypass self message
-    if message.from_user.is_self:
+    # bypass self message or message from verified user like telegram official
+    if message.from_user.is_self or message.from_user.is_verified or message.chat.is_support:
         return
 
     # If already blocked, return
@@ -106,6 +106,8 @@ async def captcha_pm(client: Client, message: types.Message):
             curTs = int(time.time()) + 95
             veriurl = pyroSecrets.WEB_HostName + "/show" + pyroSecrets.WEB_UrlPrefix + "/" \
                       + sessionUUID + "/" + str(msg_chat_id) + "/" + str(curTs)
+            if message.from_user.is_verified:
+                await message.reply("Premium User need to verify twice! (Just a joke)")
             await message.reply(VERIF_TMPL.format(veriurl=veriurl, tsstr=time.strftime("%Y-%m-%d %H:%M:%S",
                                                                                        time.localtime(int(time.time())))))
             print("Captcha sent to " + str(msg_chat_id))
