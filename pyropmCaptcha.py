@@ -83,7 +83,7 @@ async def captcha_pm(client: Client, message: types.Message):
             return
 
     # bypass self message or message from verified user like telegram official
-    if message.from_user.is_self or message.from_user.is_verified:
+    if message.from_user.is_self or message.from_user.is_verified or message.chat.is_support:
         return
 
     # If already blocked, return
