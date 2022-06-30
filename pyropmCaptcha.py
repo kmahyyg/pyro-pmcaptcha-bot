@@ -24,16 +24,16 @@ app = Client(name="pmcaptcha_myoungram",
              device_model=platform.node())
 
 VERIF_TMPL = """
-请在 90s 内点击 [此处]({veriurl}) 完成验证。如到期未完成，请联系 @S1gnaiBot 解封。
-Please click [here]({veriurl}) within 90s to finish verification if you are a human. If not, you will be blocked, contact @S1gnaiBot to unblock.
+请在 90s 内点击 [此处]({veriurl}) 完成验证。如到期未完成，请联系 {botuser} 解封。
+Please click [here]({veriurl}) within 90s to finish verification if you are a human. If not, you will be blocked, contact {botuser} to unblock.
 
 Current Time: {tsstr}
 Powered By MYounGram v1.0
 """
 
 VERIF_FAIL = """
-人机验证失败，验证不通过，请联系 @S1gnaiBot 解封。
-Human Verification Failed, Contact @S1gnaiBot to unblock. ERRCODE: {errcode}
+人机验证失败，验证不通过，请联系 {botuser} 解封。
+Human Verification Failed, Contact {botuser} to unblock. ERRCODE: {errcode}
 
 Powered By MYounGram v1.0
 """
@@ -46,8 +46,8 @@ Powered By MYounGram v1.0
 """
 
 VERIF_500 = """
-内部异常，验证结果待定，请联系 @S1gnaiBot 报障。
-We've encountered internal error, please contact @S1gnaiBot to report issue. ERRCODE: {errcode}
+内部异常，验证结果待定，请联系 {botuser} 报障。
+We've encountered internal error, please contact {botuser} to report issue. ERRCODE: {errcode}
 
 Powered By MYounGram v1.0
 """
@@ -80,6 +80,7 @@ async def captcha_pm(client: Client, message: types.Message):
     if message.outgoing and message.chat.id != message.from_user.id:
         if redis_cli.set("ulist_" + str(msg_chat_id), 1):
             print("User " + str(msg_chat_id) + " added to whitelist due to outgoing first.")
+            await client.unblock_user(msg_chat_id)
             return
 
     # bypass self message or message from verified user like telegram official
@@ -89,7 +90,7 @@ async def captcha_pm(client: Client, message: types.Message):
     # If already blocked, return
     if redis_cli.get("ulist_" + str(msg_chat_id)) == b"2":
         print("User " + str(msg_chat_id) + " is already blocked.")
-        await message.reply(VERIF_FAIL.format(errcode=9001))
+        await message.reply(VERIF_FAIL.format(errcode=9001,botuser=pyroSecrets.PYRO_MY_BOTNAME))
         await client.block_user(msg_chat_id)
         return
 
@@ -108,7 +109,7 @@ async def captcha_pm(client: Client, message: types.Message):
                       + sessionUUID + "/" + str(msg_chat_id) + "/" + str(curTs)
             if message.from_user.is_verified:
                 await message.reply("Premium User need to verify twice! (Just a joke)")
-            await message.reply(VERIF_TMPL.format(veriurl=veriurl, tsstr=time.strftime("%Y-%m-%d %H:%M:%S",
+            await message.reply(VERIF_TMPL.format(veriurl=veriurl, botuser=pyroSecrets.PYRO_MY_BOTNAME, tsstr=time.strftime("%Y-%m-%d %H:%M:%S",
                                                                                        time.localtime(int(time.time())))))
             print("Captcha sent to " + str(msg_chat_id))
             # set pmstat_ and uinverify_ in redis
@@ -126,7 +127,7 @@ async def captcha_pm(client: Client, message: types.Message):
         else:
             # check if value expired
             if int(pmstat.decode()) < int(time.time()):
-                await message.reply(VERIF_FAIL.format(errcode=9002))
+                await message.reply(VERIF_FAIL.format(errcode=9002, botuser=pyroSecrets.PYRO_MY_BOTNAME))
                 print("Captcha expired, block user " + str(msg_chat_id))
                 await client.block_user(msg_chat_id)
                 # set ulist_ in redis
@@ -138,7 +139,7 @@ async def captcha_pm(client: Client, message: types.Message):
             uinverify = redis_cli.get("uinverify_" + str(msg_chat_id))
             if uinverify is None:
                 # uinverify_ not found, already expired, block user and return
-                await message.reply(VERIF_FAIL.format(errcode=9004))
+                await message.reply(VERIF_FAIL.format(errcode=9004, botuser=pyroSecrets.PYRO_MY_BOTNAME))
                 await client.block_user(msg_chat_id)
                 print("Captcha expired, block user " + str(msg_chat_id))
                 ret = redis_cli.set("ulist_" + str(msg_chat_id), 2)
@@ -157,7 +158,7 @@ async def captcha_pm(client: Client, message: types.Message):
                 try:
                     oriSignTxt = tsAndUUID[0] + "/" + userid + "/" + tsAndUUID[1]
                 except KeyError:
-                    await message.reply(VERIF_500.format(errcode=9098))
+                    await message.reply(VERIF_500.format(errcode=9098, botuser=pyroSecrets.PYRO_MY_BOTNAME))
                     print("[ERROR] KeyError in uinverify_" + str(msg_chat_id))
                     return
                 # generate sig
@@ -187,7 +188,7 @@ async def captcha_pm(client: Client, message: types.Message):
                 else:
                     # sig incorrect, block user and return
                     print("Captcha SIG incorrect, block user " + str(msg_chat_id))
-                    await message.reply(VERIF_FAIL.format(errcode=9003))
+                    await message.reply(VERIF_FAIL.format(errcode=9003, botuser=pyroSecrets.PYRO_MY_BOTNAME))
                     await client.block_user(msg_chat_id)
                     ret = redis_cli.set("ulist_" + str(msg_chat_id), 2)
                     if ret is None:
