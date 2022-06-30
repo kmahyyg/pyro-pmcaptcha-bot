@@ -179,7 +179,7 @@ async def captcha_pm(client: Client, message: types.Message):
                     ret = redis_cli.set("ulist_" + str(msg_chat_id), 1)
                     if ret is None:
                         print("[ERROR] ulist_" + str(msg_chat_id) + " set ok")
-                        await message.reply(VERIF_500.format(errcode=9099))
+                        await message.reply(VERIF_500.format(errcode=9099, botuser=pyroSecrets.PYRO_MY_BOTNAME))
                         return
                     else:
                         print("Verification Passed for: " + str(msg_chat_id))
