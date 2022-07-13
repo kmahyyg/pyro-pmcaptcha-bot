@@ -112,7 +112,7 @@ async def captcha_pm(client: Client, message: types.Message):
                       + sessionUUID + "/" + str(msg_chat_id) + "/" + str(curTs)
             if message.from_user.is_verified:
                 await message.reply("Premium User need to verify twice! (Just a joke)")
-            await message.reply(VERIF_TMPL.format(veriurl=veriurl, tsstr=time.strftime("%Y-%m-%d %H:%M:%S",
+            await message.reply(VERIF_TMPL.format(veriurl=veriurl, botuser=pyroSecrets.PYRO_MY_BOTNAME, tsstr=time.strftime("%Y-%m-%d %H:%M:%S",
                                                                                        time.localtime(int(time.time())))))
             logging.info("Captcha sent to " + str(msg_chat_id))
             # set pmstat_ and uinverify_ in redis
@@ -142,7 +142,7 @@ async def captcha_pm(client: Client, message: types.Message):
             uinverify = redis_cli.get("uinverify_" + str(msg_chat_id))
             if uinverify is None:
                 # uinverify_ not found, already expired, block user and return
-                await message.reply(VERIF_FAIL.format(errcode=9004))
+                await message.reply(VERIF_FAIL.format(errcode=9004, botuser=pyroSecrets.PYRO_MY_BOTNAME))
                 await client.block_user(msg_chat_id)
                 logging.info("Captcha expired, block user " + str(msg_chat_id))
                 ret = redis_cli.set("ulist_" + str(msg_chat_id), 2)
