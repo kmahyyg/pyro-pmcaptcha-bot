@@ -27,16 +27,16 @@ app = Client(name="pmcaptcha_myoungram",
              device_model=platform.node())
 
 VERIF_TMPL = """
-请在 90s 内点击 [此处]({veriurl}) 完成验证。如到期未完成，请联系 @S1gnaiBot 解封。
-Please click [here]({veriurl}) within 90s to finish verification if you are a human. If not, you will be blocked, contact @S1gnaiBot to unblock.
+请在 90s 内点击 [此处]({veriurl}) 完成验证。如到期未完成，请联系 {botuser} 解封。
+Please click [here]({veriurl}) within 90s to finish verification if you are a human. If not, you will be blocked, contact {botuser} to unblock.
 
 Current Time: {tsstr}
 Powered By MYounGram v1.0
 """
 
 VERIF_FAIL = """
-人机验证失败，验证不通过，请联系 @S1gnaiBot 解封。
-Human Verification Failed, Contact @S1gnaiBot to unblock. ERRCODE: {errcode}
+人机验证失败，验证不通过，请联系 {botuser} 解封。
+Human Verification Failed, Contact {botuser} to unblock. ERRCODE: {errcode}
 
 Powered By MYounGram v1.0
 """
@@ -49,8 +49,8 @@ Powered By MYounGram v1.0
 """
 
 VERIF_500 = """
-内部异常，验证结果待定，请联系 @S1gnaiBot 报障。
-We've encountered internal error, please contact @S1gnaiBot to report issue. ERRCODE: {errcode}
+内部异常，验证结果待定，请联系 {botuser} 报障。
+We've encountered internal error, please contact {botuser} to report issue. ERRCODE: {errcode}
 
 Powered By MYounGram v1.0
 """
