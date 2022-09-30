@@ -53,7 +53,7 @@ async function callServerSideVerify(token, uip) {
     // Turnstile injects a token in "cf-turnstile-response".
     // Validate the token by calling the "/siteverify" API endpoint.
     let formData = new FormData();
-    formData.append('secret', "${capt_sitesecret}");
+    formData.append('secret', capt_sitesecret);
     formData.append('response', token);
     formData.append('remoteip', uip);
 
@@ -102,7 +102,7 @@ router.post("/verify" + urlPrefix + "/u", async request => {
           new TextEncoder().encode(sessionUUID + "/" + userID + "/" + timeStamp)
         );
         let sigBase64 = _arrayBufferToBase64(sigFinal);
-        return new Response(`Send <br /> <pre>${sigBase64}</pre> back to finish your verification.`, {
+        return new Response(`Send <br /> <pre>${sigBase64}</pre> back to chat conversation to finish your verification.`, {
           headers: { "Content-Type": "text/html" },
           status: 200,
         })
