@@ -53,7 +53,7 @@ async function callServerSideVerify(token, uip) {
     // Turnstile injects a token in "cf-turnstile-response".
     // Validate the token by calling the "/siteverify" API endpoint.
     let formData = new FormData();
-    formData.append('secret', ${capt_sitesecret});
+    formData.append('secret', "${capt_sitesecret}");
     formData.append('response', token);
     formData.append('remoteip', uip);
 
