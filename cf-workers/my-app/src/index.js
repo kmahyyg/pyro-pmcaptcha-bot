@@ -25,12 +25,13 @@ router.get("/show" + urlPrefix + "/:uuid/:userid/:expt", ({ params }) => {
         <meta http-equiv="X-UA-Compatible" content="IE=edge">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>Verification</title>
-        <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
+        <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
     </head>
     <body>
-        <h1>Please complete CAPTCHA.</h1>
+        <h1>Please complete CAPTCHA. Wait for 2-5 seconds, If you see nothing, just click submit.</h1>
+        <h2>Powered by Cloudflare</h2>
         <form action="/verify${urlPrefix}/u?uuid=${verifySessionUUID}&userid=${params.userid}&expt=${params.expt}" method="post">
-          <div class="h-captcha" data-sitekey="${hcapt_sitekey}"></div>
+          <div class="cf-turnstile" data-sitekey="${capt_sitekey}" data-callback="javascriptCallback"></div>
           <input type="hidden" name="_uuid" value="${verifySessionUUID}">
           <br />
           <input type="submit" value="Submit">
@@ -46,17 +47,22 @@ router.get("/show" + urlPrefix + "/:uuid/:userid/:expt", ({ params }) => {
   })
 });
 
-async function callServerSideVerify(token) {
-  const SITEVERIFY_URL = "https://hcaptcha.com/siteverify";
+async function callServerSideVerify(token, uip) {
+  const SITEVERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
   try {
-    var response = await fetch(SITEVERIFY_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
-      },
-      body: `secret=${hcapt_sitesecret}&response=${token}`,
+    // Turnstile injects a token in "cf-turnstile-response".
+    // Validate the token by calling the "/siteverify" API endpoint.
+    let formData = new FormData();
+    formData.append('secret', capt_sitesecret);
+    formData.append('response', token);
+    formData.append('remoteip', uip);
+
+    const resp = await fetch(SITEVERIFY_URL, {
+      body: formData,
+      method: 'POST',
     });
-    const json = await response.json();
+
+    const json = await resp.json();
     return json;
   } catch {
     return { success: false, error: "Failed to call server side verify" };
@@ -83,8 +89,9 @@ router.post("/verify" + urlPrefix + "/u", async request => {
     const paramUUID = request.query.uuid;
     const timeStamp = request.query.expt;
     const sessionUUID = formData.get("_uuid");
+    const userIP = request.headers.get('CF-Connecting-IP');
     if (sessionUUID === paramUUID) {
-      var res = await callServerSideVerify(formData.get("h-captcha-response"));
+      var res = await callServerSideVerify(formData.get("cf-turnstile-response"), userIP);
       if (res.success === true){
         const jwkSigKey = await crypto.subtle.importKey(
           "jwk", jwkSingle, { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]
@@ -95,7 +102,7 @@ router.post("/verify" + urlPrefix + "/u", async request => {
           new TextEncoder().encode(sessionUUID + "/" + userID + "/" + timeStamp)
         );
         let sigBase64 = _arrayBufferToBase64(sigFinal);
-        return new Response(`Send <br /> <pre>${sigBase64}</pre> back to finish your verification.`, {
+        return new Response(`Send <br /> <pre>${sigBase64}</pre> back to chat conversation to finish your verification.`, {
           headers: { "Content-Type": "text/html" },
           status: 200,
         })
