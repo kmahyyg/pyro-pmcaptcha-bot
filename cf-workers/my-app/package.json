@@ -11,6 +11,6 @@
   },
   "dependencies": {
     "@glenstack/cf-workers-hcaptcha": "^1.0.0",
-    "itty-router": "^2.1.9"
+    "itty-router": "^2.6.6"
   }
 }
