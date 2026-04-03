@@ -52,6 +52,7 @@ logging.basicConfig(
 	format="%(asctime)s [%(levelname)s] %(message)s",
 )
 logger = logging.getLogger("pmcaptcha")
+logging.getLogger('telethon').setLevel(level=logging.WARNING)
 
 
 def log_user_action(action: str, chat_id: int | None, user_id: int | None, **context) -> None:
