@@ -46,12 +46,15 @@ STATE_ALLOWED = "1"
 STATE_BLOCKED = "2"
 STATE_WAITING = "3"
 
-
-logging.basicConfig(
-	level=logging.INFO,
-	format="%(asctime)s [%(levelname)s] %(message)s",
-)
 logger = logging.getLogger("pmcaptcha")
+logger.setLevel(logging.INFO)
+handler = logging.StreamHandler()
+formatter = logging.Formatter("[%(asctime)s] - [%(levelname)s] : %(message)s")
+handler.setFormatter(formatter)
+if not logger.handlers:
+	logger.addHandler(handler)
+logger.propagate = False
+
 logging.getLogger('telethon').setLevel(level=logging.WARNING)
 
 
