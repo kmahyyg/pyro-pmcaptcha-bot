@@ -1,0 +1,12 @@
+[project]
+name = "pytelethon-self-pmcaptchabot"w
+version = "1.2.0"
+description = "Previously from Pyrogram, now migrated to Telethon, designed to keep you away from private message spam. It helps you by providing non-contact users with a captcha to verify that they are not bots, and only allows verified users to send you messages."
+requires-python = ">=3.13"
+dependencies = [
+    "redis>=7.4.0",
+    "telethon>=1.42.0",
+]
+
+[[tool.uv.index]]
+url = "https://mirrors.volces.com/pypi/simple/"

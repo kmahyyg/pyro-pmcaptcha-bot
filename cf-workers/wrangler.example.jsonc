@@ -1,0 +1,28 @@
+  {
+    "$schema": "node_modules/wrangler/config-schema.json",
+    "name": "valya-ricmod-8ebf",
+    "compatibility_date": "2026-04-03",
+    "main": "src/index.js",
+    "placement": {
+      "mode": "smart"
+    },
+    "workers_dev": true,
+    "compatibility_flags": [
+      "nodejs_compat"
+    ],
+    "observability": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "logs": {
+        "invocation_logs": true
+      }
+    },
+    "secrets": {
+      "required": ["capt_sitesecret", "envVar_jwkKey", "envVar_jwkUUID", "urlPrefix"]
+    },
+    "vars": {
+      "capt_sitekey": "",
+      "zone": "PROD",
+      "usage": "TelegramCaptchaBot"
+    }
+  }
