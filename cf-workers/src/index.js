@@ -7,6 +7,9 @@ const HTML_HEADERS = {
 	"cache-control": "no-store",
 };
 
+// default verification ttl is always 5 minutes, add a 30s jitter to account for clock skew and network delays, etc.
+const REQUEST_TS_MAX_AGE_SECONDS = 330;
+
 function base64UrlEncodeBytes(bytes) {
 	let binary = "";
 	for (const b of bytes) binary += String.fromCharCode(b);
@@ -47,6 +50,14 @@ function isValidTimestamp(ts) {
 	return /^\d{10,13}$/.test(ts);
 }
 
+function isTimestampFresh(tsText) {
+	if (!isValidTimestamp(tsText)) return false;
+	const ts = Number(tsText);
+	if (!Number.isFinite(ts)) return false;
+	const now = Math.floor(Date.now() / 1000);
+	return Math.abs(now - ts) <= REQUEST_TS_MAX_AGE_SECONDS;
+}
+
 async function importHmacKeyJwk(envVar_jwkUUID, envVar_jwkKey) {
 	const jwkSingle = {
 		kty: "oct",
@@ -76,6 +87,7 @@ function renderPage({
 	requestTs,
 	outputToken = "",
 	error = "",
+	showVerifyForm = true,
 }) {
 	const escapedSession = htmlEscape(sessionId || "");
 	const escapedUserId = htmlEscape(userId || "");
@@ -186,10 +198,15 @@ function renderPage({
 			font-size: 0.9rem;
 		}
 		.hint code {
+			display: block;
+			max-width: 100%;
 			background: #f4efe2;
 			border: 1px solid var(--line);
 			border-radius: 6px;
-			padding: 0.1rem 0.35rem;
+			padding: 0.35rem 0.45rem;
+			overflow-wrap: anywhere;
+			word-break: break-word;
+			white-space: pre-wrap;
 		}
 		@media (max-width: 560px) {
 			.card { padding: 0.85rem; }
@@ -204,12 +221,12 @@ function renderPage({
 		<p>Complete the captcha, then copy your token and send it back to Telegram.</p>
 		<div class="meta">Session: ${escapedSession}<br/>Telegram User ID: ${escapedUserId}<br/>Request TS: ${escapedRequestTs}</div>
 		${escapedError ? `<div class="err">${escapedError}</div>` : ""}
-		<form method="post" action="${htmlEscape(postPath)}">
+		${showVerifyForm ? `<form method="post" action="${htmlEscape(postPath)}">
 			<div class="row">
 				<div class="cf-turnstile" data-sitekey="${htmlEscape(siteKey)}" data-theme="light"></div>
 				<button type="submit">Verify and Generate Token</button>
 			</div>
-		</form>
+		</form>` : ""}
 		<textarea readonly placeholder="Token appears here after successful verification">${escapedToken}</textarea>
 		${escapedToken ? `<p class="hint">Send this command in Telegram: <code>/verify ${escapedToken}</code></p>` : ""}
 	</main>
@@ -245,6 +262,18 @@ router.get("/show:prefix/:uuid/:userid/:currentTimestamp", async (request, env) 
 	if (!isValidSession(sessionId) || !isValidTelegramUserId(userId) || !isValidTimestamp(currentTimestamp)) {
 		return new Response("Invalid URL parameters", { status: 400 });
 	}
+	if (!isTimestampFresh(currentTimestamp)) {
+		const expiredPage = renderPage({
+			siteKey: env.capt_sitekey,
+			postPath: `/show${env.urlPrefix}/${sessionId}/${userId}/${currentTimestamp}`,
+			sessionId,
+			userId,
+			requestTs: currentTimestamp,
+			error: "Verification failed: request expired.",
+			showVerifyForm: false,
+		});
+		return new Response(expiredPage, { status: 410, headers: HTML_HEADERS });
+	}
 
 	const page = renderPage({
 		siteKey: env.capt_sitekey,
@@ -279,6 +308,18 @@ router.post("/show:prefix/:uuid/:userid/:currentTimestamp", async (request, env)
 			error: "Invalid session or user id.",
 		});
 		return new Response(invalidPage, { status: 400, headers: HTML_HEADERS });
+	}
+	if (!isTimestampFresh(currentTimestamp)) {
+		const expiredPage = renderPage({
+			siteKey: env.capt_sitekey,
+			postPath,
+			sessionId,
+			userId,
+			requestTs: currentTimestamp,
+			error: "Verification failed: request expired.",
+			showVerifyForm: false,
+		});
+		return new Response(expiredPage, { status: 410, headers: HTML_HEADERS });
 	}
 
 	if (!turnstileToken) {
