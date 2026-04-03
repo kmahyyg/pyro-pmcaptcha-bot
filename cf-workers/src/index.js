@@ -88,20 +88,22 @@ function renderPage({
 	outputToken = "",
 	error = "",
 	showVerifyForm = true,
+	pageType = "verify",
 }) {
 	const escapedSession = htmlEscape(sessionId || "");
 	const escapedUserId = htmlEscape(userId || "");
 	const escapedRequestTs = htmlEscape(requestTs || "");
 	const escapedToken = htmlEscape(outputToken || "");
 	const escapedError = htmlEscape(error || "");
+	const isResultPage = pageType === "result";
 
 	return `<!doctype html>
 <html lang="en">
 <head>
 	<meta charset="utf-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1" />
-	<title>Telegram PM Verify</title>
-	<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+	<title>${isResultPage ? "Telegram PM Verify Result" : "Telegram PM Verify"}</title>
+	${showVerifyForm ? `<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>` : ""}
 	<style>
 		:root {
 			--bg: #f8f5eb;
@@ -217,8 +219,8 @@ function renderPage({
 </head>
 <body>
 	<main class="card">
-		<h1>Telegram PM Verification</h1>
-		<p>Complete the captcha, then copy your token and send it back to Telegram.</p>
+		<h1>${isResultPage ? "Verification Completed" : "Telegram PM Verification"}</h1>
+		<p>${isResultPage ? "Copy your token and send it back to Telegram." : "Complete the captcha, then copy your token and send it back to Telegram."}</p>
 		<div class="meta">Telegram User ID: ${escapedUserId}</div>
 		${escapedError ? `<div class="err">${escapedError}</div>` : ""}
 		${showVerifyForm ? `<form method="post" action="${htmlEscape(postPath)}">
@@ -360,12 +362,14 @@ router.post("/show:prefix/:uuid/:userid/:currentTimestamp", async (request, env)
 	const output = base64UrlEncodeText(`${payload}/${sigB64Url}`);
 
 	const resultPage = renderPage({
-		siteKey: env.capt_sitekey,
+		siteKey: "",
 		postPath,
 		sessionId,
 		userId,
 		requestTs: currentTimestamp,
 		outputToken: output,
+		showVerifyForm: false,
+		pageType: "result",
 	});
 	return new Response(resultPage, { status: 200, headers: HTML_HEADERS });
 });
