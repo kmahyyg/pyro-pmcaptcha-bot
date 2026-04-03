@@ -23,6 +23,7 @@ from teleSecrets import (
 	HMAC_KEY_B64_URLSAFE_NOPAD,
 	TELE_API_ID,
 	TELE_API_SECRET,
+	TELE_MY_BOTNAME,
 	TELE_MY_TITLE,
 	WEB_HostName,
 	WEB_UrlPrefix,
@@ -30,6 +31,7 @@ from teleSecrets import (
 
 
 VERIFY_TTL_SECONDS = 300
+PMSTAT_TTL_SECONDS = 600
 VERIFY_RESULT_MAX_AGE_SECONDS = 45
 SESSION_NAME = "pmcaptcha_myoungram"
 
@@ -39,6 +41,10 @@ ERR_SIGNATURE_FAILED = 9003
 ERR_RESULT_TOO_OLD = 9004
 ERR_DATABASE = 9099
 ERR_PYTHON = 9098
+
+STATE_ALLOWED = "1"
+STATE_BLOCKED = "2"
+STATE_WAITING = "3"
 
 
 logging.basicConfig(
@@ -97,6 +103,25 @@ async def mark_allowed_unless_blocked(chat_id: int) -> bool:
 	return bool(result)
 
 
+SET_WAITING_IF_NOT_BLOCKED_LUA = """
+local current = redis.call('GET', KEYS[1])
+if current == '2' then
+  return 0
+end
+if current == '1' then
+	return 1
+end
+redis.call('SET', KEYS[1], '3')
+return 1
+"""
+
+
+async def mark_waiting_unless_blocked(user_id: int) -> bool:
+	allow_key = redis_key_allow(user_id)
+	result = await redis_client.eval(SET_WAITING_IF_NOT_BLOCKED_LUA, 1, allow_key)
+	return bool(result)
+
+
 async def clear_pending_verification(chat_id: int) -> None:
 	try:
 		await redis_client.delete(redis_key_pending(chat_id), redis_key_verify(chat_id))
@@ -134,12 +159,38 @@ async def block_user(user_id: int) -> None:
 
 
 async def fail_and_block(event: events.NewMessage.Event, err_code: int, text: str) -> None:
-	await event.reply(f"Verification failed (ErrCode {err_code}): {text}")
+	logger.warning(
+		"Fail-and-block err=%s chat_id=%s user_id=%s detail=%s message=%r",
+		err_code,
+		event.chat_id,
+		event.sender_id,
+		text,
+		event.raw_text,
+	)
+	await event.reply(
+		f"Error occurred (ErrCode {err_code}).\n"
+		f"For assistance, copy this error code and contact {TELE_MY_BOTNAME}."
+	)
 	try:
-		await redis_client.set(redis_key_allow(event.chat_id), "2")
+		await redis_client.set(redis_key_allow(event.sender_id), STATE_BLOCKED)
 	except redis.RedisError as exc:
 		logger.error("Redis failure while blocking chat %s: %s", event.chat_id, exc)
 	await block_user(event.sender_id)
+
+
+async def reply_error(event: events.NewMessage.Event, err_code: int, text: str) -> None:
+	logger.warning(
+		"Reply error err=%s chat_id=%s user_id=%s detail=%s message=%r",
+		err_code,
+		event.chat_id,
+		event.sender_id,
+		text,
+		event.raw_text,
+	)
+	await event.reply(
+		f"Error occurred (ErrCode {err_code}).\n"
+		f"For assistance, copy this error code and contact {TELE_MY_BOTNAME}."
+	)
 
 
 @client.on(events.NewMessage(incoming=True))
@@ -150,6 +201,7 @@ async def pm_guard(event: events.NewMessage.Event) -> None:
 		return
 
 	chat_id = event.chat_id
+	user_id = event.sender_id
 	sender = await event.get_sender()
 	if sender is None:
 		return
@@ -158,7 +210,7 @@ async def pm_guard(event: events.NewMessage.Event) -> None:
 	if getattr(sender, "is_self", False):
 		return
 
-	allow_key = redis_key_allow(chat_id)
+	allow_key = redis_key_allow(user_id)
 	pending_key = redis_key_pending(chat_id)
 	verify_key = redis_key_verify(chat_id)
 
@@ -166,29 +218,37 @@ async def pm_guard(event: events.NewMessage.Event) -> None:
 		allow_state = await redis_client.get(allow_key)
 	except redis.RedisError as exc:
 		logger.error("Redis read failed on %s: %s", allow_key, exc)
-		await event.reply(f"Internal error (ErrCode {ERR_DATABASE})")
+		await reply_error(event, ERR_DATABASE, "Database read failure.")
 		return
 
-	if allow_state == "2":
-		await event.reply(f"Error occurred (ErrCode {ERR_ALREADY_BLOCKED}).")
+	if allow_state == STATE_BLOCKED:
+		await reply_error(event, ERR_ALREADY_BLOCKED, "Already blocked previously.")
 		await block_user(sender.id)
 		return
 
-	if allow_state == "1":
+	if allow_state == STATE_ALLOWED:
 		return
 
 	if getattr(sender, "contact", False) or getattr(sender, "mutual_contact", False):
 		try:
-			await mark_allowed_unless_blocked(chat_id)
+			await mark_allowed_unless_blocked(user_id)
 		except redis.RedisError as exc:
 			logger.error("Redis write failed on %s: %s", allow_key, exc)
 		return
 
 	raw_text = (event.raw_text or "").strip()
+	if allow_state == STATE_WAITING and not raw_text.startswith("/verify "):
+		await fail_and_block(
+			event,
+			ERR_SIGNATURE_FAILED,
+			"Unexpected message while waiting for verification."
+		)
+		return
+
 	if raw_text.startswith("/verify "):
 		token = raw_text.split(" ", 1)[1].strip()
 		if not token:
-			await event.reply("Missing verification payload.")
+			await reply_error(event, ERR_SIGNATURE_FAILED, "Missing verification payload.")
 			return
 
 		try:
@@ -196,7 +256,11 @@ async def pm_guard(event: events.NewMessage.Event) -> None:
 			verify_raw = await redis_client.get(verify_key)
 		except redis.RedisError as exc:
 			logger.error("Redis read failed for pending verification: %s", exc)
-			await event.reply(f"Internal error (ErrCode {ERR_DATABASE})")
+			await reply_error(event, ERR_DATABASE, "Database read failure.")
+			return
+
+		if allow_state == STATE_WAITING and not pending_ts_raw:
+			await fail_and_block(event, ERR_PENDING_EXPIRED, "Verification session record missing.")
 			return
 
 		if not pending_ts_raw or not verify_raw:
@@ -206,7 +270,7 @@ async def pm_guard(event: events.NewMessage.Event) -> None:
 		try:
 			session_uuid_expected, _created_ts, _remote_ip = verify_raw.split(",", 2
 			)
-			pending_ts = int(pending_ts_raw)
+			created_ts = int(_created_ts)
 			session_uuid_recv, user_id_recv, result_ts = parse_verify_token(token)
 			now = int(time.time())
 		except (ValueError, TypeError, binascii.Error):
@@ -217,7 +281,7 @@ async def pm_guard(event: events.NewMessage.Event) -> None:
 			await fail_and_block(event, ERR_PYTHON, "Unexpected runtime error.")
 			return
 
-		if now - pending_ts > VERIFY_TTL_SECONDS:
+		if now - created_ts > VERIFY_TTL_SECONDS:
 			await fail_and_block(event, ERR_PENDING_EXPIRED, "Verification session expired.")
 			return
 
@@ -230,14 +294,14 @@ async def pm_guard(event: events.NewMessage.Event) -> None:
 			return
 
 		try:
-			if not await mark_allowed_unless_blocked(chat_id):
-				await event.reply(f"You are blocked (ErrCode {ERR_ALREADY_BLOCKED}).")
+			if not await mark_allowed_unless_blocked(user_id):
+				await reply_error(event, ERR_ALREADY_BLOCKED, "Blocked state while finalizing verification.")
 				await block_user(sender.id)
 				return
 			await redis_client.delete(pending_key, verify_key)
 		except redis.RedisError as exc:
 			logger.error("Redis write failure finalizing verification: %s", exc)
-			await event.reply(f"Internal error (ErrCode {ERR_DATABASE})")
+			await reply_error(event, ERR_DATABASE, "Database write failure.")
 			return
 
 		await event.reply("Verification succeeded. You can now message me.")
@@ -247,22 +311,26 @@ async def pm_guard(event: events.NewMessage.Event) -> None:
 	now = int(time.time())
 
 	try:
-		await redis_client.set(pending_key, str(now), ex=VERIFY_TTL_SECONDS)
+		if not await mark_waiting_unless_blocked(user_id):
+			await reply_error(event, ERR_ALREADY_BLOCKED, "Already blocked previously.")
+			await block_user(sender.id)
+			return
+		await redis_client.set(pending_key, str(now), ex=PMSTAT_TTL_SECONDS)
 		await redis_client.set(verify_key, f"{session_uuid},{now},-", ex=VERIFY_TTL_SECONDS)
 	except redis.RedisError as exc:
 		logger.error("Redis write failed for chat %s: %s", chat_id, exc)
-		await event.reply(f"Internal error (ErrCode {ERR_DATABASE})")
+		await reply_error(event, ERR_DATABASE, "Database write failure.")
 		return
 
 	verify_url = build_verify_url(session_uuid, sender.id, now)
 	await event.reply(
 		"Anti-spam verification required.\n"
-		f"1) Open: {verify_url}\n"
+		f"1) Open [here to verify]({verify_url})\n"
 		"2) Finish the captcha\n"
 		"3) Copy token and send:\n"
 		"/verify <TOKEN>\n"
-		f"Session: {session_uuid}\n"
-		"This request expires in 5 minutes."
+		"This request expires in 5 minutes.",
+		parse_mode="md"
 	)
 
 
@@ -274,11 +342,12 @@ async def allow_on_outgoing_pm(event: events.NewMessage.Event) -> None:
 		return
 
 	chat_id = event.chat_id
+	peer_user_id = event.chat_id
 	if not chat_id:
 		return
 
 	try:
-		allowed = await mark_allowed_unless_blocked(chat_id)
+		allowed = await mark_allowed_unless_blocked(peer_user_id)
 		if allowed:
 			await clear_pending_verification(chat_id)
 	except redis.RedisError as exc:
