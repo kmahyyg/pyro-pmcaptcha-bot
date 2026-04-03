@@ -219,7 +219,7 @@ function renderPage({
 	<main class="card">
 		<h1>Telegram PM Verification</h1>
 		<p>Complete the captcha, then copy your token and send it back to Telegram.</p>
-		<div class="meta">Session: ${escapedSession}<br/>Telegram User ID: ${escapedUserId}<br/>Request TS: ${escapedRequestTs}</div>
+		<div class="meta">Telegram User ID: ${escapedUserId}</div>
 		${escapedError ? `<div class="err">${escapedError}</div>` : ""}
 		${showVerifyForm ? `<form method="post" action="${htmlEscape(postPath)}">
 			<div class="row">
