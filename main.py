@@ -231,7 +231,6 @@ async def pm_guard(event: events.NewMessage.Event) -> None:
 
 	chat_id = event.chat_id
 	user_id = event.sender_id
-	log_user_action("incoming_private_message", chat_id, user_id)
 	sender = await event.get_sender()
 	if sender is None:
 		log_user_action("incoming_sender_missing", chat_id, user_id)
