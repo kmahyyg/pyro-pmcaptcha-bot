@@ -292,7 +292,7 @@ async def main() -> None:
 		logger.error("Unable to connect to Redis: %s", exc)
 		raise
 
-	client.start()
+	await client.start()
 	me = await client.get_me()
 	logger.info("%s online as @%s (%s)", TELE_MY_TITLE, me.username, me.id)
 	await client.run_until_disconnected()
