@@ -3,6 +3,20 @@
 Currently:
 - PM Captcha
 
+## Dependency
+
+Python:
+- Telethon
+- Redis
+
+Cloudflare Worker:
+- Turnstile
+- `itty-router` for routing
+
+Infra:
+- Python
+- Redis
+
 ## How it works?
 
 1. When a user started private message conversation, user bot retrieved chat id and user id.
