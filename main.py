@@ -10,7 +10,7 @@ import logging
 import time
 import uuid
 
-import redis
+import redis.asyncio as redis
 from telethon import TelegramClient, events
 from telethon.tl.functions.contacts import BlockRequest
 
@@ -81,30 +81,25 @@ def redis_key_verify(chat_id: int) -> str:
 	return f"uinverify_{chat_id}"
 
 
-def mark_allowed_unless_blocked(chat_id: int) -> bool:
+ALLOW_IF_NOT_BLOCKED_LUA = """
+local current = redis.call('GET', KEYS[1])
+if current == '2' then
+  return 0
+end
+redis.call('SET', KEYS[1], '1')
+return 1
+"""
+
+
+async def mark_allowed_unless_blocked(chat_id: int) -> bool:
 	allow_key = redis_key_allow(chat_id)
-	for _ in range(3):
-		try:
-			with redis_client.pipeline() as pipe:
-				pipe.watch(allow_key)
-				current = pipe.get(allow_key)
-				if current == "2":
-					pipe.reset()
-					return False
-				pipe.multi()
-				pipe.set(allow_key, "1")
-				pipe.execute()
-				return True
-		except redis.WatchError:
-			continue
-		except redis.RedisError:
-			raise
-	return False
+	result = await redis_client.eval(ALLOW_IF_NOT_BLOCKED_LUA, 1, allow_key)
+	return bool(result)
 
 
-def clear_pending_verification(chat_id: int) -> None:
+async def clear_pending_verification(chat_id: int) -> None:
 	try:
-		redis_client.delete(redis_key_pending(chat_id), redis_key_verify(chat_id))
+		await redis_client.delete(redis_key_pending(chat_id), redis_key_verify(chat_id))
 	except redis.RedisError:
 		raise
 
@@ -132,7 +127,8 @@ def parse_verify_token(token: str) -> tuple[str, str, int]:
 
 async def block_user(user_id: int) -> None:
 	try:
-		await client(BlockRequest(user_id))
+		peer = await client.get_input_entity(user_id)
+		await client(BlockRequest(peer))
 	except Exception as exc:  # pragma: no cover
 		logger.warning("Failed to block user %s: %s", user_id, exc)
 
@@ -140,7 +136,7 @@ async def block_user(user_id: int) -> None:
 async def fail_and_block(event: events.NewMessage.Event, err_code: int, text: str) -> None:
 	await event.reply(f"Verification failed (ErrCode {err_code}): {text}")
 	try:
-		redis_client.set(redis_key_allow(event.chat_id), "2")
+		await redis_client.set(redis_key_allow(event.chat_id), "2")
 	except redis.RedisError as exc:
 		logger.error("Redis failure while blocking chat %s: %s", event.chat_id, exc)
 	await block_user(event.sender_id)
@@ -167,7 +163,7 @@ async def pm_guard(event: events.NewMessage.Event) -> None:
 	verify_key = redis_key_verify(chat_id)
 
 	try:
-		allow_state = redis_client.get(allow_key)
+		allow_state = await redis_client.get(allow_key)
 	except redis.RedisError as exc:
 		logger.error("Redis read failed on %s: %s", allow_key, exc)
 		await event.reply(f"Internal error (ErrCode {ERR_DATABASE})")
@@ -183,7 +179,7 @@ async def pm_guard(event: events.NewMessage.Event) -> None:
 
 	if getattr(sender, "contact", False) or getattr(sender, "mutual_contact", False):
 		try:
-			mark_allowed_unless_blocked(chat_id)
+			await mark_allowed_unless_blocked(chat_id)
 		except redis.RedisError as exc:
 			logger.error("Redis write failed on %s: %s", allow_key, exc)
 		return
@@ -196,8 +192,8 @@ async def pm_guard(event: events.NewMessage.Event) -> None:
 			return
 
 		try:
-			pending_ts_raw = redis_client.get(pending_key)
-			verify_raw = redis_client.get(verify_key)
+			pending_ts_raw = await redis_client.get(pending_key)
+			verify_raw = await redis_client.get(verify_key)
 		except redis.RedisError as exc:
 			logger.error("Redis read failed for pending verification: %s", exc)
 			await event.reply(f"Internal error (ErrCode {ERR_DATABASE})")
@@ -234,14 +230,11 @@ async def pm_guard(event: events.NewMessage.Event) -> None:
 			return
 
 		try:
-			pipe = redis_client.pipeline()
-			if not mark_allowed_unless_blocked(chat_id):
+			if not await mark_allowed_unless_blocked(chat_id):
 				await event.reply(f"You are blocked (ErrCode {ERR_ALREADY_BLOCKED}).")
 				await block_user(sender.id)
 				return
-			pipe.delete(pending_key)
-			pipe.delete(verify_key)
-			pipe.execute()
+			await redis_client.delete(pending_key, verify_key)
 		except redis.RedisError as exc:
 			logger.error("Redis write failure finalizing verification: %s", exc)
 			await event.reply(f"Internal error (ErrCode {ERR_DATABASE})")
@@ -254,10 +247,8 @@ async def pm_guard(event: events.NewMessage.Event) -> None:
 	now = int(time.time())
 
 	try:
-		pipe = redis_client.pipeline()
-		pipe.set(pending_key, str(now), ex=VERIFY_TTL_SECONDS)
-		pipe.set(verify_key, f"{session_uuid},{now},-", ex=VERIFY_TTL_SECONDS)
-		pipe.execute()
+		await redis_client.set(pending_key, str(now), ex=VERIFY_TTL_SECONDS)
+		await redis_client.set(verify_key, f"{session_uuid},{now},-", ex=VERIFY_TTL_SECONDS)
 	except redis.RedisError as exc:
 		logger.error("Redis write failed for chat %s: %s", chat_id, exc)
 		await event.reply(f"Internal error (ErrCode {ERR_DATABASE})")
@@ -287,21 +278,21 @@ async def allow_on_outgoing_pm(event: events.NewMessage.Event) -> None:
 		return
 
 	try:
-		allowed = mark_allowed_unless_blocked(chat_id)
+		allowed = await mark_allowed_unless_blocked(chat_id)
 		if allowed:
-			clear_pending_verification(chat_id)
+			await clear_pending_verification(chat_id)
 	except redis.RedisError as exc:
 		logger.error("Redis write failed while allowing outgoing chat %s: %s", chat_id, exc)
 
 
 async def main() -> None:
 	try:
-		redis_client.ping()
+		await redis_client.ping()
 	except redis.RedisError as exc:
 		logger.error("Unable to connect to Redis: %s", exc)
 		raise
 
-	await client.start()
+	client.start()
 	me = await client.get_me()
 	logger.info("%s online as @%s (%s)", TELE_MY_TITLE, me.username, me.id)
 	await client.run_until_disconnected()
