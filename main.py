@@ -54,6 +54,14 @@ logging.basicConfig(
 logger = logging.getLogger("pmcaptcha")
 
 
+def log_user_action(action: str, chat_id: int | None, user_id: int | None, **context) -> None:
+	ctx = " ".join(f"{k}={context[k]!r}" for k in sorted(context))
+	if ctx:
+		logger.info("action=%s chat_id=%s user_id=%s %s", action, chat_id, user_id, ctx)
+		return
+	logger.info("action=%s chat_id=%s user_id=%s", action, chat_id, user_id)
+
+
 redis_client = redis.Redis(
 	host=DB_REDIS_IP,
 	port=DB_REDIS_PORT,
@@ -151,14 +159,24 @@ def parse_verify_token(token: str) -> tuple[str, str, int]:
 
 
 async def block_user(user_id: int) -> None:
+	log_user_action("block_initiated", None, user_id)
 	try:
 		peer = await client.get_input_entity(user_id)
 		await client(BlockRequest(peer))
+		log_user_action("block_succeeded", None, user_id)
 	except Exception as exc:  # pragma: no cover
+		log_user_action("block_failed", None, user_id, error=str(exc))
 		logger.warning("Failed to block user %s: %s", user_id, exc)
 
 
 async def fail_and_block(event: events.NewMessage.Event, err_code: int, text: str) -> None:
+	log_user_action(
+		"blocked_due_to_error",
+		event.chat_id,
+		event.sender_id,
+		err_code=err_code,
+		reason=text,
+	)
 	logger.warning(
 		"Fail-and-block err=%s chat_id=%s user_id=%s detail=%s message=%r",
 		err_code,
@@ -179,6 +197,13 @@ async def fail_and_block(event: events.NewMessage.Event, err_code: int, text: st
 
 
 async def reply_error(event: events.NewMessage.Event, err_code: int, text: str) -> None:
+	log_user_action(
+		"error_reported",
+		event.chat_id,
+		event.sender_id,
+		err_code=err_code,
+		reason=text,
+	)
 	logger.warning(
 		"Reply error err=%s chat_id=%s user_id=%s detail=%s message=%r",
 		err_code,
@@ -202,8 +227,10 @@ async def pm_guard(event: events.NewMessage.Event) -> None:
 
 	chat_id = event.chat_id
 	user_id = event.sender_id
+	log_user_action("incoming_private_message", chat_id, user_id)
 	sender = await event.get_sender()
 	if sender is None:
+		log_user_action("incoming_sender_missing", chat_id, user_id)
 		return
 
 	# Skip your own outgoing messages mirrored in saved/private contexts.
@@ -222,6 +249,7 @@ async def pm_guard(event: events.NewMessage.Event) -> None:
 		return
 
 	if allow_state == STATE_BLOCKED:
+		log_user_action("incoming_user_already_blocked", chat_id, user_id)
 		await reply_error(event, ERR_ALREADY_BLOCKED, "Already blocked previously.")
 		await block_user(sender.id)
 		return
@@ -231,13 +259,14 @@ async def pm_guard(event: events.NewMessage.Event) -> None:
 
 	if getattr(sender, "contact", False) or getattr(sender, "mutual_contact", False):
 		try:
-			await mark_allowed_unless_blocked(user_id)
+			allowed = await mark_allowed_unless_blocked(user_id)
 		except redis.RedisError as exc:
 			logger.error("Redis write failed on %s: %s", allow_key, exc)
 		return
 
 	raw_text = (event.raw_text or "").strip()
 	if allow_state == STATE_WAITING and not raw_text.startswith("/verify "):
+		log_user_action("waiting_received_non_verify", chat_id, user_id, message=raw_text)
 		await fail_and_block(
 			event,
 			ERR_SIGNATURE_FAILED,
@@ -246,8 +275,10 @@ async def pm_guard(event: events.NewMessage.Event) -> None:
 		return
 
 	if raw_text.startswith("/verify "):
+		log_user_action("verify_command_received", chat_id, user_id)
 		token = raw_text.split(" ", 1)[1].strip()
 		if not token:
+			log_user_action("verify_command_missing_payload", chat_id, user_id)
 			await reply_error(event, ERR_SIGNATURE_FAILED, "Missing verification payload.")
 			return
 
@@ -260,10 +291,12 @@ async def pm_guard(event: events.NewMessage.Event) -> None:
 			return
 
 		if allow_state == STATE_WAITING and not pending_ts_raw:
+			log_user_action("waiting_pmstat_missing", chat_id, user_id)
 			await fail_and_block(event, ERR_PENDING_EXPIRED, "Verification session record missing.")
 			return
 
 		if not pending_ts_raw or not verify_raw:
+			log_user_action("verify_session_missing", chat_id, user_id)
 			await fail_and_block(event, ERR_PENDING_EXPIRED, "No active verification session.")
 			return
 
@@ -282,19 +315,23 @@ async def pm_guard(event: events.NewMessage.Event) -> None:
 			return
 
 		if now - created_ts > VERIFY_TTL_SECONDS:
+			log_user_action("verify_expired", chat_id, user_id, age_seconds=now - created_ts)
 			await fail_and_block(event, ERR_PENDING_EXPIRED, "Verification session expired.")
 			return
 
 		if now - result_ts > VERIFY_RESULT_MAX_AGE_SECONDS:
+			log_user_action("verify_result_too_old", chat_id, user_id, age_seconds=now - result_ts)
 			await fail_and_block(event, ERR_RESULT_TOO_OLD, "Verification result is too old.")
 			return
 
 		if session_uuid_recv != session_uuid_expected or user_id_recv != str(sender.id):
+			log_user_action("verify_session_mismatch", chat_id, user_id)
 			await fail_and_block(event, ERR_SIGNATURE_FAILED, "Session mismatch.")
 			return
 
 		try:
 			if not await mark_allowed_unless_blocked(user_id):
+				log_user_action("verify_finalize_blocked", chat_id, user_id)
 				await reply_error(event, ERR_ALREADY_BLOCKED, "Blocked state while finalizing verification.")
 				await block_user(sender.id)
 				return
@@ -304,6 +341,7 @@ async def pm_guard(event: events.NewMessage.Event) -> None:
 			await reply_error(event, ERR_DATABASE, "Database write failure.")
 			return
 
+		log_user_action("verification_passed", chat_id, user_id)
 		await event.reply("Verification succeeded. You can now message me.")
 		return
 
@@ -312,6 +350,7 @@ async def pm_guard(event: events.NewMessage.Event) -> None:
 
 	try:
 		if not await mark_waiting_unless_blocked(user_id):
+			log_user_action("verification_trigger_denied_blocked", chat_id, user_id)
 			await reply_error(event, ERR_ALREADY_BLOCKED, "Already blocked previously.")
 			await block_user(sender.id)
 			return
@@ -323,6 +362,7 @@ async def pm_guard(event: events.NewMessage.Event) -> None:
 		return
 
 	verify_url = build_verify_url(session_uuid, sender.id, now)
+	log_user_action("verification_triggered", chat_id, user_id)
 	await event.reply(
 		"Anti-spam verification required.\n"
 		f"1) Open [here to verify]({verify_url})\n"
