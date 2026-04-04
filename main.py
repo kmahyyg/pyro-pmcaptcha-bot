@@ -236,6 +236,10 @@ async def pm_guard(event: events.NewMessage.Event) -> None:
 		log_user_action("incoming_sender_missing", chat_id, user_id)
 		return
 
+	# incoming message is from a bot, not required to verify
+	if getattr(sender, "bot", False):
+		return
+
 	# Skip your own outgoing messages mirrored in saved/private contexts.
 	if getattr(sender, "is_self", False):
 		return
